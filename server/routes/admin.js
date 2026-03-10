@@ -1,41 +1,61 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
+const { db } = require('../db');
 
-// GET /api/stats — avg battery % grouped by MST
-router.get('/stats', (req, res) => {
-  const stats = db.prepare(`
-    SELECT
-      mst_group,
-      ROUND(AVG(battery_percentage), 1) AS avg_battery,
-      COUNT(*) AS count
-    FROM logs
-    GROUP BY mst_group
-    ORDER BY mst_group
-  `).all();
-  res.json(stats);
+// GET /api/stats
+router.get('/stats', async (req, res) => {
+  try {
+    const result = await db.execute(`
+      SELECT
+        mst_group,
+        ROUND(AVG(battery_percentage), 1) AS avg_battery,
+        COUNT(*) AS count
+      FROM logs
+      GROUP BY mst_group
+      ORDER BY mst_group
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
-// GET /api/participants — all participants with metadata
-router.get('/participants', (req, res) => {
-  const participants = db.prepare('SELECT * FROM participants ORDER BY participant_code').all();
-  res.json(participants);
+// GET /api/participants
+router.get('/participants', async (req, res) => {
+  try {
+    const result = await db.execute('SELECT * FROM participants ORDER BY participant_code');
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
-// PATCH /api/participants/:code/metadata — update researcher metadata on a participant
-router.patch('/participants/:code/metadata', (req, res) => {
-  const { code } = req.params;
-  const updates = req.body;
+// PATCH /api/participants/:code/metadata
+router.patch('/participants/:code/metadata', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const updates = req.body;
 
-  const participant = db.prepare('SELECT metadata FROM participants WHERE participant_code = ?').get(code);
-  if (!participant) return res.status(404).json({ error: 'Participant not found' });
+    const result = await db.execute({
+      sql: 'SELECT metadata FROM participants WHERE participant_code = ?',
+      args: [code]
+    });
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Participant not found' });
 
-  const existing = JSON.parse(participant.metadata || '{}');
-  const merged = { ...existing, ...updates };
+    const existing = JSON.parse(result.rows[0].metadata || '{}');
+    const merged = { ...existing, ...updates };
 
-  db.prepare('UPDATE participants SET metadata = ? WHERE participant_code = ?')
-    .run(JSON.stringify(merged), code);
-  res.json({ ok: true });
+    await db.execute({
+      sql: 'UPDATE participants SET metadata = ? WHERE participant_code = ?',
+      args: [JSON.stringify(merged), code]
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 module.exports = router;

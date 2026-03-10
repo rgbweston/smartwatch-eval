@@ -3,6 +3,7 @@ const express = require('express');
 const path = require('path');
 const cors = require('cors');
 
+const { initDb } = require('./db');
 const logsRouter = require('./routes/logs');
 const parametersRouter = require('./routes/parameters');
 const adminRouter = require('./routes/admin');
@@ -28,6 +29,13 @@ if (isProd) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+initDb()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error('Failed to initialise database:', err);
+    process.exit(1);
+  });
