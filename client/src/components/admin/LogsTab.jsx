@@ -132,7 +132,13 @@ export default function LogsTab() {
             href="/api/logs/export"
             className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg"
           >
-            Export CSV
+            Export Logs CSV
+          </a>
+          <a
+            href="/api/logs/export-configs"
+            className="text-sm bg-gray-600 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg"
+          >
+            Export Configs CSV
           </a>
         </div>
       </div>

@@ -172,18 +172,20 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/logs/export — CSV download (all logs + all parameters)
+// GET /api/logs/export — CSV download (all logs + all parameters + config_name)
 router.get('/export', async (req, res) => {
   try {
-    const [logsResult, paramsResult, participantsResult] = await Promise.all([
+    const [logsResult, paramsResult, participantsResult, configsResult] = await Promise.all([
       db.execute('SELECT * FROM logs ORDER BY timestamp DESC'),
       db.execute('SELECT * FROM parameter_defs ORDER BY scope, created_at ASC'),
-      db.execute('SELECT participant_code, metadata FROM participants')
+      db.execute('SELECT participant_code, metadata FROM participants'),
+      db.execute('SELECT * FROM sampling_configs ORDER BY start_date ASC')
     ]);
 
     const logs = logsResult.rows;
     const logParams = paramsResult.rows.filter(p => p.scope === 'log');
     const participantParams = paramsResult.rows.filter(p => p.scope === 'participant');
+    const configs = configsResult.rows;
 
     // Build participant metadata lookup
     const participantMeta = {};
@@ -191,8 +193,20 @@ router.get('/export', async (req, res) => {
       participantMeta[p.participant_code] = JSON.parse(p.metadata || '{}');
     }
 
+    function findConfigForLog(logTimestamp) {
+      const ts = logTimestamp;
+      // Sort by start_date DESC, take first match
+      const sorted = [...configs].sort((a, b) => b.start_date.localeCompare(a.start_date));
+      for (const c of sorted) {
+        if (ts >= c.start_date && (c.end_date === null || c.end_date === '' || ts < c.end_date)) {
+          return c.name;
+        }
+      }
+      return '';
+    }
+
     const fixedHeaders = [
-      'id', 'participant_code', 'mst_group', 'battery_percentage',
+      'config_name', 'id', 'participant_code', 'mst_group', 'battery_percentage',
       'device_model', 'timestamp', 'source'
     ];
     const logMetaHeaders = logParams.map(p => p.name);
@@ -202,15 +216,55 @@ router.get('/export', async (req, res) => {
     const rows = logs.map(log => {
       const logMeta = JSON.parse(log.metadata || '{}');
       const pMeta = participantMeta[log.participant_code] || {};
-      const fixed = fixedHeaders.map(h => `"${String(log[h] ?? '').replace(/"/g, '""')}"`);
+      const configName = findConfigForLog(log.timestamp);
+      const fixedVals = fixedHeaders.map(h => {
+        const v = h === 'config_name' ? configName : (log[h] ?? '');
+        return `"${String(v).replace(/"/g, '""')}"`;
+      });
       const logMetaCols = logMetaHeaders.map(h => `"${String(logMeta[h] ?? '').replace(/"/g, '""')}"`);
       const pMetaCols = participantMetaHeaders.map(h => `"${String(pMeta[h] ?? '').replace(/"/g, '""')}"`);
-      return [...fixed, ...logMetaCols, ...pMetaCols].join(',');
+      return [...fixedVals, ...logMetaCols, ...pMetaCols].join(',');
     });
 
     const csv = [allHeaders.join(','), ...rows].join('\n');
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="smartwatch-logs.csv"');
+    res.send(csv);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/logs/export-configs — CSV download of sampling configs
+router.get('/export-configs', async (req, res) => {
+  try {
+    const [configsResult, valuesResult, paramsResult] = await Promise.all([
+      db.execute('SELECT * FROM sampling_configs ORDER BY start_date ASC'),
+      db.execute('SELECT * FROM sampling_config_values'),
+      db.execute("SELECT name FROM parameter_defs WHERE scope='log' ORDER BY created_at ASC")
+    ]);
+
+    const configs = configsResult.rows;
+    const logParamNames = paramsResult.rows.map(p => p.name);
+
+    const valuesByConfig = {};
+    for (const v of valuesResult.rows) {
+      if (!valuesByConfig[v.config_id]) valuesByConfig[v.config_id] = {};
+      valuesByConfig[v.config_id][v.param_name] = v.value;
+    }
+
+    const headers = ['id', 'name', 'start_date', 'end_date', ...logParamNames];
+    const rows = configs.map(c => {
+      const vals = valuesByConfig[c.id] || {};
+      const fixed = ['id', 'name', 'start_date', 'end_date'].map(h => `"${String(c[h] ?? '').replace(/"/g, '""')}"`);
+      const paramCols = logParamNames.map(n => `"${String(vals[n] ?? '').replace(/"/g, '""')}"`);
+      return [...fixed, ...paramCols].join(',');
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="smartwatch-configs.csv"');
     res.send(csv);
   } catch (err) {
     console.error(err);

@@ -3,9 +3,10 @@ import LogsTab from './admin/LogsTab';
 import ParticipantsTab from './admin/ParticipantsTab';
 import ParametersTab from './admin/ParametersTab';
 import MethodologyTab from './admin/MethodologyTab';
+import ConfigsTab from './admin/ConfigsTab';
 import { MST_COLORS } from '../constants/mst';
 
-const TABS = ['Logs', 'Participants', 'Parameters', 'Methodology'];
+const TABS = ['Logs', 'Participants', 'Parameters', 'Methodology', 'Configs'];
 
 function StatCard({ label, value, sub }) {
   return (
@@ -19,12 +20,25 @@ function StatCard({ label, value, sub }) {
   );
 }
 
+function formatConfigLabel(c) {
+  const start = new Date(c.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const end = c.end_date ? new Date(c.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'ongoing';
+  return `${c.name} (${start} – ${end})`;
+}
+
 function AnalyticsPanel() {
   const [stats, setStats] = useState(null);
+  const [configs, setConfigs] = useState([]);
+  const [selectedConfig, setSelectedConfig] = useState('');
 
   useEffect(() => {
-    fetch('/api/stats').then(r => r.json()).then(setStats);
+    fetch('/api/sampling-configs').then(r => r.json()).then(setConfigs).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const url = selectedConfig ? `/api/stats?config_id=${selectedConfig}` : '/api/stats';
+    fetch(url).then(r => r.json()).then(setStats);
+  }, [selectedConfig]);
 
   if (!stats) return null;
 
@@ -34,6 +48,23 @@ function AnalyticsPanel() {
 
   return (
     <div className="space-y-4 mb-6">
+      {/* Config selector */}
+      {configs.length > 0 && (
+        <div className="flex justify-end items-center gap-2">
+          <span className="text-xs text-gray-500">View:</span>
+          <select
+            value={selectedConfig}
+            onChange={e => setSelectedConfig(e.target.value)}
+            className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">All time</option>
+            {configs.map(c => (
+              <option key={c.id} value={c.id}>{formatConfigLabel(c)}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* Row 1: Overall loss rates */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard label="Avg hourly loss" value={overall.avg_hourly_loss !== null ? `${overall.avg_hourly_loss}%` : null} sub="per hour" />
@@ -177,6 +208,7 @@ export default function AdminDashboard() {
         {activeTab === 'Participants' && <ParticipantsTab />}
         {activeTab === 'Parameters' && <ParametersTab />}
         {activeTab === 'Methodology' && <MethodologyTab />}
+        {activeTab === 'Configs' && <ConfigsTab />}
       </main>
     </div>
   );

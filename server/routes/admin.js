@@ -5,8 +5,27 @@ const { db } = require('../db');
 // GET /api/stats
 router.get('/stats', async (req, res) => {
   try {
+    const { config_id } = req.query;
+    let logSql = 'SELECT l.participant_code, l.mst_group, l.battery_percentage, l.timestamp, p.device_model FROM logs l LEFT JOIN participants p ON p.participant_code = l.participant_code';
+    const logArgs = [];
+
+    if (config_id) {
+      const cfgResult = await db.execute({ sql: 'SELECT start_date, end_date FROM sampling_configs WHERE id = ?', args: [config_id] });
+      if (cfgResult.rows.length > 0) {
+        const { start_date, end_date } = cfgResult.rows[0];
+        logSql += ' WHERE l.timestamp >= ?';
+        logArgs.push(start_date);
+        if (end_date) {
+          logSql += ' AND l.timestamp < ?';
+          logArgs.push(end_date);
+        }
+      }
+    }
+
+    logSql += ' ORDER BY l.participant_code, l.timestamp ASC';
+
     const [logsResult, participantsResult] = await Promise.all([
-      db.execute('SELECT l.participant_code, l.mst_group, l.battery_percentage, l.timestamp, p.device_model FROM logs l LEFT JOIN participants p ON p.participant_code = l.participant_code ORDER BY l.participant_code, l.timestamp ASC'),
+      db.execute({ sql: logSql, args: logArgs }),
       db.execute('SELECT COUNT(*) as count FROM participants')
     ]);
 
@@ -252,6 +271,107 @@ router.get('/device-models', async (req, res) => {
       ORDER BY count DESC
     `);
     res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/sampling-configs
+router.get('/sampling-configs', async (req, res) => {
+  try {
+    const [configsResult, valuesResult] = await Promise.all([
+      db.execute('SELECT * FROM sampling_configs ORDER BY start_date ASC'),
+      db.execute('SELECT * FROM sampling_config_values')
+    ]);
+    const valuesByConfig = {};
+    for (const v of valuesResult.rows) {
+      if (!valuesByConfig[v.config_id]) valuesByConfig[v.config_id] = {};
+      valuesByConfig[v.config_id][v.param_name] = v.value;
+    }
+    const configs = configsResult.rows.map(c => ({
+      ...c,
+      values: valuesByConfig[c.id] || {}
+    }));
+    res.json(configs);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/sampling-configs
+router.post('/sampling-configs', async (req, res) => {
+  try {
+    const { name, start_date } = req.body;
+    if (!name || !start_date) return res.status(400).json({ error: 'name and start_date are required' });
+
+    // Auto-close any currently open config
+    await db.execute({ sql: `UPDATE sampling_configs SET end_date = ? WHERE end_date IS NULL`, args: [start_date] });
+
+    const inserted = await db.execute({
+      sql: `INSERT INTO sampling_configs (name, start_date, end_date) VALUES (?, ?, NULL)`,
+      args: [name, start_date]
+    });
+    const configId = Number(inserted.lastInsertRowid);
+
+    const logParams = await db.execute("SELECT name FROM parameter_defs WHERE scope='log'");
+    for (const p of logParams.rows) {
+      await db.execute({
+        sql: `INSERT OR IGNORE INTO sampling_config_values (config_id, param_name, value) VALUES (?, ?, 'Unknown')`,
+        args: [configId, p.name]
+      });
+    }
+
+    const newConfig = await db.execute({ sql: 'SELECT * FROM sampling_configs WHERE id = ?', args: [configId] });
+    res.json(newConfig.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PATCH /api/sampling-configs/:id
+router.patch('/sampling-configs/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, start_date, end_date, values } = req.body;
+
+    if (name !== undefined) {
+      await db.execute({ sql: 'UPDATE sampling_configs SET name = ? WHERE id = ?', args: [name, id] });
+    }
+    if (start_date !== undefined) {
+      await db.execute({ sql: 'UPDATE sampling_configs SET start_date = ? WHERE id = ?', args: [start_date, id] });
+    }
+    if (end_date !== undefined) {
+      await db.execute({ sql: 'UPDATE sampling_configs SET end_date = ? WHERE id = ?', args: [end_date || null, id] });
+    }
+    if (values && typeof values === 'object') {
+      for (const [param_name, value] of Object.entries(values)) {
+        await db.execute({
+          sql: `INSERT OR REPLACE INTO sampling_config_values (config_id, param_name, value) VALUES (?, ?, ?)`,
+          args: [id, param_name, value]
+        });
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/sampling-configs/:id
+router.delete('/sampling-configs/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const countResult = await db.execute('SELECT COUNT(*) as count FROM sampling_configs');
+    if (Number(countResult.rows[0].count) <= 1) {
+      return res.status(400).json({ error: 'Cannot delete the only config' });
+    }
+    await db.execute({ sql: 'DELETE FROM sampling_config_values WHERE config_id = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM sampling_configs WHERE id = ?', args: [id] });
+    res.json({ ok: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });

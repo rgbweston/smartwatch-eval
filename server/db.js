@@ -89,6 +89,39 @@ async function initDb() {
     PRIMARY KEY (device_model, param_name)
   )`);
 
+  // Sampling configs tables
+  await db.execute(`CREATE TABLE IF NOT EXISTS sampling_configs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date   TEXT DEFAULT NULL
+  )`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS sampling_config_values (
+    config_id  INTEGER NOT NULL,
+    param_name TEXT NOT NULL,
+    value      TEXT NOT NULL DEFAULT 'Unknown',
+    PRIMARY KEY (config_id, param_name)
+  )`);
+
+  // Seed initial config if none exists
+  const configCount = await db.execute('SELECT COUNT(*) as count FROM sampling_configs');
+  if (Number(configCount.rows[0].count) === 0) {
+    const earliestLog = await db.execute('SELECT MIN(timestamp) as min_ts FROM logs');
+    const startDate = earliestLog.rows[0].min_ts || new Date().toISOString();
+    const inserted = await db.execute({
+      sql: `INSERT INTO sampling_configs (name, start_date, end_date) VALUES ('Config 1', ?, NULL)`,
+      args: [startDate]
+    });
+    const configId = Number(inserted.lastInsertRowid);
+    const logParams = await db.execute("SELECT name FROM parameter_defs WHERE scope='log'");
+    for (const p of logParams.rows) {
+      await db.execute({
+        sql: `INSERT OR IGNORE INTO sampling_config_values (config_id, param_name, value) VALUES (?, ?, 'Unknown')`,
+        args: [configId, p.name]
+      });
+    }
+  }
+
   const DEVICE_MODEL_DEFAULTS = [
     { device_model: 'Vivoactive 5', param_name: 'skin_temperature', value: 'false' },
     { device_model: 'Vivoactive 6', param_name: 'skin_temperature', value: 'false' },
