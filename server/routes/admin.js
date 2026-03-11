@@ -132,6 +132,79 @@ router.delete('/participants/:code', async (req, res) => {
   }
 });
 
+// PATCH /api/participants/:code/sensor-config
+router.patch('/participants/:code/sensor-config', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const result = await db.execute({
+      sql: 'SELECT metadata FROM participants WHERE participant_code = ?',
+      args: [code]
+    });
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Participant not found' });
+
+    const existing = JSON.parse(result.rows[0].metadata || '{}');
+    existing._sensor_config = req.body; // full replacement
+    await db.execute({
+      sql: 'UPDATE participants SET metadata = ? WHERE participant_code = ?',
+      args: [JSON.stringify(existing), code]
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/device-model-configs
+router.get('/device-model-configs', async (req, res) => {
+  try {
+    const { device_model } = req.query;
+    let sql = 'SELECT * FROM device_model_configs';
+    const args = [];
+    if (device_model) { sql += ' WHERE device_model = ?'; args.push(device_model); }
+    const result = await db.execute({ sql, args });
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/device-model-configs
+router.put('/device-model-configs', async (req, res) => {
+  try {
+    const { device_model, param_name, value } = req.body;
+    if (!device_model || !param_name || value == null) {
+      return res.status(400).json({ error: 'device_model, param_name, and value are required' });
+    }
+    await db.execute({
+      sql: `INSERT INTO device_model_configs (device_model, param_name, value) VALUES (?, ?, ?)
+            ON CONFLICT(device_model, param_name) DO UPDATE SET value = excluded.value`,
+      args: [device_model, param_name, value]
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/device-model-configs/:device_model/:param_name
+router.delete('/device-model-configs/:device_model/:param_name', async (req, res) => {
+  try {
+    const { device_model, param_name } = req.params;
+    const result = await db.execute({
+      sql: 'DELETE FROM device_model_configs WHERE device_model = ? AND param_name = ?',
+      args: [device_model, param_name]
+    });
+    if (result.rowsAffected === 0) return res.status(404).json({ error: 'Override not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // GET /api/device-models
 router.get('/device-models', async (req, res) => {
   try {

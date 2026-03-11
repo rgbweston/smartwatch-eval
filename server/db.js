@@ -80,6 +80,25 @@ async function initDb() {
   await db.execute(
     `UPDATE parameter_defs SET scope='log' WHERE scope='participant' AND name IN (${sensorNames})`
   ).catch(() => {});
+
+  // Device model overrides table
+  await db.execute(`CREATE TABLE IF NOT EXISTS device_model_configs (
+    device_model  TEXT NOT NULL,
+    param_name    TEXT NOT NULL,
+    value         TEXT NOT NULL,
+    PRIMARY KEY (device_model, param_name)
+  )`);
+
+  const DEVICE_MODEL_DEFAULTS = [
+    { device_model: 'Vivoactive 5', param_name: 'skin_temperature', value: 'false' },
+    { device_model: 'Vivoactive 6', param_name: 'skin_temperature', value: 'false' },
+  ];
+  for (const d of DEVICE_MODEL_DEFAULTS) {
+    await db.execute({
+      sql: `INSERT OR IGNORE INTO device_model_configs (device_model, param_name, value) VALUES (?, ?, ?)`,
+      args: [d.device_model, d.param_name, d.value]
+    });
+  }
 }
 
 module.exports = { db, initDb };

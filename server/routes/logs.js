@@ -31,15 +31,28 @@ router.post('/', async (req, res) => {
       args: [participant_code, mst_group, device_model]
     });
 
-    // Apply log-scoped parameter defaults to this log's metadata
-    const logParamDefs = await db.execute(
-      "SELECT name, default_value FROM parameter_defs WHERE scope = 'log' AND default_value IS NOT NULL"
+    // Merge chain: global defaults → device model overrides → participant sensor config → request body
+    const paramDefs = await db.execute(
+      "SELECT name, default_value FROM parameter_defs WHERE scope='log' AND default_value IS NOT NULL"
     );
-    const logDefaults = {};
-    for (const p of logParamDefs.rows) {
-      if (!(p.name in metadata)) logDefaults[p.name] = p.default_value;
-    }
-    const finalMetadata = { ...logDefaults, ...metadata };
+    const merged = {};
+    for (const p of paramDefs.rows) merged[p.name] = p.default_value;
+
+    const deviceCfg = await db.execute({
+      sql: 'SELECT param_name, value FROM device_model_configs WHERE device_model = ?',
+      args: [device_model]
+    });
+    for (const r of deviceCfg.rows) merged[r.param_name] = r.value;
+
+    const participantRow = await db.execute({
+      sql: 'SELECT metadata FROM participants WHERE participant_code = ?',
+      args: [participant_code]
+    });
+    const sensorConfig = JSON.parse(participantRow.rows[0]?.metadata || '{}')._sensor_config || {};
+    Object.assign(merged, sensorConfig);
+
+    Object.assign(merged, metadata);
+    const finalMetadata = merged;
 
     const result = await db.execute({
       sql: `INSERT INTO logs (
@@ -88,15 +101,28 @@ router.post('/backlog', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Apply log-scoped parameter defaults
-    const logParamDefs = await db.execute(
-      "SELECT name, default_value FROM parameter_defs WHERE scope = 'log' AND default_value IS NOT NULL"
+    // Merge chain: global defaults → device model overrides → participant sensor config → request body
+    const paramDefs = await db.execute(
+      "SELECT name, default_value FROM parameter_defs WHERE scope='log' AND default_value IS NOT NULL"
     );
-    const logDefaults = {};
-    for (const p of logParamDefs.rows) {
-      if (!(p.name in metadata)) logDefaults[p.name] = p.default_value;
-    }
-    const finalMetadata = { ...logDefaults, ...metadata };
+    const merged = {};
+    for (const p of paramDefs.rows) merged[p.name] = p.default_value;
+
+    const deviceCfg = await db.execute({
+      sql: 'SELECT param_name, value FROM device_model_configs WHERE device_model = ?',
+      args: [device_model]
+    });
+    for (const r of deviceCfg.rows) merged[r.param_name] = r.value;
+
+    const participantRow = await db.execute({
+      sql: 'SELECT metadata FROM participants WHERE participant_code = ?',
+      args: [participant_code]
+    });
+    const sensorConfig = JSON.parse(participantRow.rows[0]?.metadata || '{}')._sensor_config || {};
+    Object.assign(merged, sensorConfig);
+
+    Object.assign(merged, metadata);
+    const finalMetadata = merged;
 
     const result = await db.execute({
       sql: `INSERT INTO logs (
