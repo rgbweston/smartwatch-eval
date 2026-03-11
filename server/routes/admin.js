@@ -5,16 +5,75 @@ const { db } = require('../db');
 // GET /api/stats
 router.get('/stats', async (req, res) => {
   try {
-    const result = await db.execute(`
-      SELECT
-        mst_group,
-        ROUND(AVG(battery_percentage), 1) AS avg_battery,
-        COUNT(*) AS count
-      FROM logs
-      GROUP BY mst_group
-      ORDER BY mst_group
-    `);
-    res.json(result.rows);
+    const [logsResult, participantsResult] = await Promise.all([
+      db.execute('SELECT participant_code, mst_group, battery_percentage, timestamp FROM logs ORDER BY participant_code, timestamp ASC'),
+      db.execute('SELECT COUNT(*) as count FROM participants')
+    ]);
+
+    const logs = logsResult.rows;
+    const participantCount = Number(participantsResult.rows[0].count);
+    const now = Date.now();
+    const totalLogs = logs.length;
+    const logsPastDay = logs.filter(l => now - new Date(l.timestamp).getTime() < 86400000).length;
+    const logsPastHour = logs.filter(l => now - new Date(l.timestamp).getTime() < 3600000).length;
+
+    // Group by participant, calculate consecutive-pair loss rates
+    const byParticipant = {};
+    for (const log of logs) {
+      if (!byParticipant[log.participant_code]) byParticipant[log.participant_code] = [];
+      byParticipant[log.participant_code].push(log);
+    }
+
+    const allRates = [];    // { lossPerHour, mst_group, isDaytime }
+    for (const pLogs of Object.values(byParticipant)) {
+      for (let i = 0; i < pLogs.length - 1; i++) {
+        const a = pLogs[i], b = pLogs[i + 1];
+        const hours = (new Date(b.timestamp) - new Date(a.timestamp)) / 3600000;
+        if (hours <= 0 || hours > 24) continue;           // skip gaps > 24h
+        const loss = a.battery_percentage - b.battery_percentage;
+        if (loss < 0) continue;                           // skip charges
+        const hour = new Date(a.timestamp).getUTCHours();
+        allRates.push({
+          lossPerHour: loss / hours,
+          mst_group: a.mst_group,
+          isDaytime: hour >= 6 && hour < 22
+        });
+      }
+    }
+
+    const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+    const round1 = v => v !== null ? Math.round(v * 10) / 10 : null;
+
+    const avgHourly = avg(allRates.map(r => r.lossPerHour));
+    const daytimeRates = allRates.filter(r => r.isDaytime).map(r => r.lossPerHour);
+    const nightRates   = allRates.filter(r => !r.isDaytime).map(r => r.lossPerHour);
+
+    // By MST group
+    const mstMap = {};
+    for (const r of allRates) {
+      if (!mstMap[r.mst_group]) mstMap[r.mst_group] = [];
+      mstMap[r.mst_group].push(r.lossPerHour);
+    }
+    const byMst = Object.entries(mstMap)
+      .map(([g, rates]) => ({ mst_group: Number(g), avg_hourly_loss: round1(avg(rates)), count: rates.length }))
+      .sort((a, b) => a.mst_group - b.mst_group);
+
+    res.json({
+      overall: {
+        avg_hourly_loss: round1(avgHourly),
+        avg_daily_loss:  round1(avgHourly !== null ? avgHourly * 24 : null),
+        daytime_loss:    round1(avg(daytimeRates)),
+        nighttime_loss:  round1(avg(nightRates))
+      },
+      by_mst: byMst,
+      snapshot: {
+        participant_count:         participantCount,
+        total_logs:                totalLogs,
+        avg_logs_per_participant:  participantCount > 0 ? Math.round((totalLogs / participantCount) * 10) / 10 : 0,
+        logs_past_day:             logsPastDay,
+        logs_past_hour:            logsPastHour
+      }
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
