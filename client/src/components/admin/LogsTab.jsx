@@ -59,6 +59,12 @@ export default function LogsTab() {
 
   useEffect(() => { fetchAll(); }, [filters]);
 
+  async function deleteLog(id) {
+    if (!confirm(`Delete log #${id}? This cannot be undone.`)) return;
+    await fetch(`/api/logs/${id}`, { method: 'DELETE' });
+    fetchAll();
+  }
+
   async function saveMetadata(logId, key, value) {
     await fetch(`/api/logs/${logId}/metadata`, {
       method: 'PATCH',
@@ -146,11 +152,12 @@ export default function LogsTab() {
               {paramDefs.map(p => (
                 <th key={p.id} className="px-3 py-2 text-left whitespace-nowrap">{p.label}</th>
               ))}
+              <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {logs.length === 0 ? (
-              <tr><td colSpan={7 + paramDefs.length} className="px-4 py-8 text-center text-gray-400">No logs yet.</td></tr>
+              <tr><td colSpan={8 + paramDefs.length} className="px-4 py-8 text-center text-gray-400">No logs yet.</td></tr>
             ) : logs.map(log => {
               const meta = JSON.parse(log.metadata || '{}');
               return (
@@ -181,6 +188,14 @@ export default function LogsTab() {
                       />
                     </td>
                   ))}
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      onClick={() => deleteLog(log.id)}
+                      className="text-red-400 hover:text-red-600 text-xs"
+                    >
+                      Delete
+                    </button>
+                  </td>
                 </tr>
               );
             })}

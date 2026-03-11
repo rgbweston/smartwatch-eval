@@ -31,25 +31,15 @@ router.post('/', async (req, res) => {
       args: [participant_code, mst_group, device_model]
     });
 
-    // Apply sensor parameter defaults for new participants
-    const existing = await db.execute({
-      sql: 'SELECT metadata FROM participants WHERE participant_code = ?',
-      args: [participant_code]
-    });
-    const currentMeta = JSON.parse(existing.rows[0]?.metadata || '{}');
-    const paramDefs = await db.execute(
-      "SELECT name, default_value FROM parameter_defs WHERE scope = 'participant' AND default_value IS NOT NULL"
+    // Apply log-scoped parameter defaults to this log's metadata
+    const logParamDefs = await db.execute(
+      "SELECT name, default_value FROM parameter_defs WHERE scope = 'log' AND default_value IS NOT NULL"
     );
-    const defaults = {};
-    for (const p of paramDefs.rows) {
-      if (!(p.name in currentMeta)) defaults[p.name] = p.default_value;
+    const logDefaults = {};
+    for (const p of logParamDefs.rows) {
+      if (!(p.name in metadata)) logDefaults[p.name] = p.default_value;
     }
-    if (Object.keys(defaults).length > 0) {
-      await db.execute({
-        sql: 'UPDATE participants SET metadata = ? WHERE participant_code = ?',
-        args: [JSON.stringify({ ...currentMeta, ...defaults }), participant_code]
-      });
-    }
+    const finalMetadata = { ...logDefaults, ...metadata };
 
     const result = await db.execute({
       sql: `INSERT INTO logs (
@@ -67,7 +57,7 @@ router.post('/', async (req, res) => {
         always_on_display ? 1 : 0,
         device_model,
         new Date().toISOString(),
-        JSON.stringify(metadata)
+        JSON.stringify(finalMetadata)
       ]
     });
 
@@ -98,6 +88,16 @@ router.post('/backlog', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
+    // Apply log-scoped parameter defaults
+    const logParamDefs = await db.execute(
+      "SELECT name, default_value FROM parameter_defs WHERE scope = 'log' AND default_value IS NOT NULL"
+    );
+    const logDefaults = {};
+    for (const p of logParamDefs.rows) {
+      if (!(p.name in metadata)) logDefaults[p.name] = p.default_value;
+    }
+    const finalMetadata = { ...logDefaults, ...metadata };
+
     const result = await db.execute({
       sql: `INSERT INTO logs (
               participant_code, mst_group, battery_percentage, shift_type,
@@ -114,7 +114,7 @@ router.post('/backlog', async (req, res) => {
         always_on_display ? 1 : 0,
         device_model,
         timestamp,
-        JSON.stringify(metadata)
+        JSON.stringify(finalMetadata)
       ]
     });
 
@@ -146,30 +146,40 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/logs/export — CSV download
+// GET /api/logs/export — CSV download (all logs + all parameters)
 router.get('/export', async (req, res) => {
   try {
-    const [logsResult, paramsResult] = await Promise.all([
+    const [logsResult, paramsResult, participantsResult] = await Promise.all([
       db.execute('SELECT * FROM logs ORDER BY timestamp DESC'),
-      db.execute("SELECT * FROM parameter_defs WHERE scope = 'log'")
+      db.execute('SELECT * FROM parameter_defs ORDER BY scope, created_at ASC'),
+      db.execute('SELECT participant_code, metadata FROM participants')
     ]);
 
     const logs = logsResult.rows;
-    const paramDefs = paramsResult.rows;
+    const logParams = paramsResult.rows.filter(p => p.scope === 'log');
+    const participantParams = paramsResult.rows.filter(p => p.scope === 'participant');
+
+    // Build participant metadata lookup
+    const participantMeta = {};
+    for (const p of participantsResult.rows) {
+      participantMeta[p.participant_code] = JSON.parse(p.metadata || '{}');
+    }
 
     const fixedHeaders = [
       'id', 'participant_code', 'mst_group', 'battery_percentage',
-      'shift_type', 'gps_enabled', 'notifications_enabled', 'always_on_display',
       'device_model', 'timestamp', 'source'
     ];
-    const metaHeaders = paramDefs.map(p => p.name);
-    const allHeaders = [...fixedHeaders, ...metaHeaders];
+    const logMetaHeaders = logParams.map(p => p.name);
+    const participantMetaHeaders = participantParams.map(p => p.name);
+    const allHeaders = [...fixedHeaders, ...logMetaHeaders, ...participantMetaHeaders];
 
     const rows = logs.map(log => {
-      const meta = JSON.parse(log.metadata || '{}');
+      const logMeta = JSON.parse(log.metadata || '{}');
+      const pMeta = participantMeta[log.participant_code] || {};
       const fixed = fixedHeaders.map(h => `"${String(log[h] ?? '').replace(/"/g, '""')}"`);
-      const metaCols = metaHeaders.map(h => `"${String(meta[h] ?? '').replace(/"/g, '""')}"`);
-      return [...fixed, ...metaCols].join(',');
+      const logMetaCols = logMetaHeaders.map(h => `"${String(logMeta[h] ?? '').replace(/"/g, '""')}"`);
+      const pMetaCols = participantMetaHeaders.map(h => `"${String(pMeta[h] ?? '').replace(/"/g, '""')}"`);
+      return [...fixed, ...logMetaCols, ...pMetaCols].join(',');
     });
 
     const csv = [allHeaders.join(','), ...rows].join('\n');
@@ -195,6 +205,18 @@ router.patch('/:id/metadata', async (req, res) => {
     const merged = { ...existing, ...updates };
 
     await db.execute({ sql: 'UPDATE logs SET metadata = ? WHERE id = ?', args: [JSON.stringify(merged), id] });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/logs/:id
+router.delete('/:id', async (req, res) => {
+  try {
+    const result = await db.execute({ sql: 'DELETE FROM logs WHERE id = ?', args: [req.params.id] });
+    if (result.rowsAffected === 0) return res.status(404).json({ error: 'Log not found' });
     res.json({ ok: true });
   } catch (err) {
     console.error(err);

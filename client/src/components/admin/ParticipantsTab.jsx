@@ -75,6 +75,12 @@ export default function ParticipantsTab() {
 
   useEffect(() => { fetchAll(); }, []);
 
+  async function deleteParticipant(code) {
+    if (!confirm(`Delete participant "${code}"? This cannot be undone.`)) return;
+    await fetch(`/api/participants/${code}`, { method: 'DELETE' });
+    fetchAll();
+  }
+
   async function saveMetadata(code, key, value) {
     await fetch(`/api/participants/${code}/metadata`, {
       method: 'PATCH',
@@ -95,11 +101,12 @@ export default function ParticipantsTab() {
             {paramDefs.map(p => (
               <th key={p.id} className="px-4 py-2 text-left whitespace-nowrap">{p.label}</th>
             ))}
+            <th className="px-4 py-2"></th>
           </tr>
         </thead>
         <tbody>
           {participants.length === 0 ? (
-            <tr><td colSpan={3 + paramDefs.length} className="px-4 py-8 text-center text-gray-400">No participants yet.</td></tr>
+            <tr><td colSpan={4 + paramDefs.length} className="px-4 py-8 text-center text-gray-400">No participants yet.</td></tr>
           ) : participants.map(p => {
             const meta = JSON.parse(p.metadata || '{}');
             return (
@@ -139,6 +146,14 @@ export default function ParticipantsTab() {
                     </td>
                   );
                 })}
+                <td className="px-4 py-2 text-right">
+                  <button
+                    onClick={() => deleteParticipant(p.participant_code)}
+                    className="text-red-400 hover:text-red-600 text-xs"
+                  >
+                    Delete
+                  </button>
+                </td>
               </tr>
             );
           })}

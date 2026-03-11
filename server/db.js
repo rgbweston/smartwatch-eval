@@ -66,14 +66,20 @@ async function initDb() {
   await db.execute("ALTER TABLE parameter_defs ADD COLUMN options TEXT DEFAULT NULL")
     .catch(() => {});
 
-  // Seed the 16 sensor parameters
+  // Seed the 16 sensor parameters as per-log scope
   for (const p of SENSOR_PARAMS) {
     await db.execute({
       sql: `INSERT OR IGNORE INTO parameter_defs (name, label, type, scope, default_value, options, created_at)
-            VALUES (?, ?, ?, 'participant', ?, ?, ?)`,
+            VALUES (?, ?, ?, 'log', ?, ?, ?)`,
       args: [p.name, p.label, p.type, p.default_value, p.options, new Date().toISOString()]
     });
   }
+
+  // Migrate any existing sensor params that were incorrectly set to 'participant' scope
+  const sensorNames = SENSOR_PARAMS.map(p => `'${p.name}'`).join(',');
+  await db.execute(
+    `UPDATE parameter_defs SET scope='log' WHERE scope='participant' AND name IN (${sensorNames})`
+  ).catch(() => {});
 }
 
 module.exports = { db, initDb };

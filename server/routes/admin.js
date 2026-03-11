@@ -58,6 +58,21 @@ router.patch('/participants/:code/metadata', async (req, res) => {
   }
 });
 
+// DELETE /api/participants/:code
+router.delete('/participants/:code', async (req, res) => {
+  try {
+    const result = await db.execute({
+      sql: 'DELETE FROM participants WHERE participant_code = ?',
+      args: [req.params.code]
+    });
+    if (result.rowsAffected === 0) return res.status(404).json({ error: 'Participant not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // GET /api/device-models
 router.get('/device-models', async (req, res) => {
   try {
