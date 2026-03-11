@@ -6,7 +6,7 @@ const { db } = require('../db');
 router.get('/stats', async (req, res) => {
   try {
     const [logsResult, participantsResult] = await Promise.all([
-      db.execute('SELECT participant_code, mst_group, battery_percentage, timestamp FROM logs ORDER BY participant_code, timestamp ASC'),
+      db.execute('SELECT l.participant_code, l.mst_group, l.battery_percentage, l.timestamp, p.device_model FROM logs l LEFT JOIN participants p ON p.participant_code = l.participant_code ORDER BY l.participant_code, l.timestamp ASC'),
       db.execute('SELECT COUNT(*) as count FROM participants')
     ]);
 
@@ -24,8 +24,8 @@ router.get('/stats', async (req, res) => {
       byParticipant[log.participant_code].push(log);
     }
 
-    const allRates = [];    // { lossPerHour, mst_group, isDaytime }
-    for (const pLogs of Object.values(byParticipant)) {
+    const allRates = [];    // { lossPerHour, mst_group, isDaytime, device_model, participant_code }
+    for (const [participantCode, pLogs] of Object.entries(byParticipant)) {
       for (let i = 0; i < pLogs.length - 1; i++) {
         const a = pLogs[i], b = pLogs[i + 1];
         const hours = (new Date(b.timestamp) - new Date(a.timestamp)) / 3600000;
@@ -36,7 +36,9 @@ router.get('/stats', async (req, res) => {
         allRates.push({
           lossPerHour: loss / hours,
           mst_group: a.mst_group,
-          isDaytime: hour >= 6 && hour < 22
+          isDaytime: hour >= 6 && hour < 22,
+          device_model: a.device_model,
+          participant_code: participantCode
         });
       }
     }
@@ -58,6 +60,32 @@ router.get('/stats', async (req, res) => {
       .map(([g, rates]) => ({ mst_group: Number(g), avg_hourly_loss: round1(avg(rates)), count: rates.length }))
       .sort((a, b) => a.mst_group - b.mst_group);
 
+    const deviceMap = {};
+    for (const r of allRates) {
+      if (!deviceMap[r.device_model]) deviceMap[r.device_model] = [];
+      deviceMap[r.device_model].push(r.lossPerHour);
+    }
+    const by_device = Object.entries(deviceMap)
+      .map(([model, rates]) => ({ device_model: model, avg_hourly_loss: round1(avg(rates)), count: rates.length }))
+      .sort((a, b) => (b.avg_hourly_loss ?? 0) - (a.avg_hourly_loss ?? 0));
+
+    const participantMap = {};
+    for (const r of allRates) {
+      if (!participantMap[r.participant_code]) participantMap[r.participant_code] = { all: [], night: [], device_model: r.device_model };
+      participantMap[r.participant_code].all.push(r.lossPerHour);
+      if (!r.isDaytime) participantMap[r.participant_code].night.push(r.lossPerHour);
+    }
+    const by_participant = Object.entries(participantMap)
+      .map(([code, d]) => ({
+        participant_code: code,
+        device_model: d.device_model,
+        avg_hourly_loss: round1(avg(d.all)),
+        avg_daily_loss: round1(avg(d.all) !== null ? avg(d.all) * 24 : null),
+        nighttime_loss: round1(avg(d.night)),
+        count: d.all.length
+      }))
+      .sort((a, b) => a.participant_code.localeCompare(b.participant_code));
+
     res.json({
       overall: {
         avg_hourly_loss: round1(avgHourly),
@@ -66,6 +94,8 @@ router.get('/stats', async (req, res) => {
         nighttime_loss:  round1(avg(nightRates))
       },
       by_mst: byMst,
+      by_device,
+      by_participant,
       snapshot: {
         participant_count:         participantCount,
         total_logs:                totalLogs,
@@ -83,7 +113,14 @@ router.get('/stats', async (req, res) => {
 // GET /api/participants
 router.get('/participants', async (req, res) => {
   try {
-    const result = await db.execute('SELECT * FROM participants ORDER BY participant_code');
+    const result = await db.execute(`
+      SELECT p.*, COALESCE(lc.log_count, 0) as log_count
+      FROM participants p
+      LEFT JOIN (
+        SELECT participant_code, COUNT(*) as log_count FROM logs GROUP BY participant_code
+      ) lc ON lc.participant_code = p.participant_code
+      ORDER BY p.participant_code
+    `);
     res.json(result.rows);
   } catch (err) {
     console.error(err);

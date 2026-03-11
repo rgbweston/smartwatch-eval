@@ -237,6 +237,7 @@ export default function ParticipantsTab() {
               <th className="px-4 py-2 text-left">Code</th>
               <th className="px-4 py-2 text-left">MST</th>
               <th className="px-4 py-2 text-left">Device</th>
+              <th className="px-4 py-2 text-left">Logs</th>
               {paramDefs.map(p => (
                 <th key={p.id} className="px-4 py-2 text-left whitespace-nowrap">{p.label}</th>
               ))}
@@ -261,6 +262,7 @@ export default function ParticipantsTab() {
                     </div>
                   </td>
                   <td className="px-4 py-2 text-gray-600">{p.device_model}</td>
+                  <td className="px-4 py-2 text-gray-500 tabular-nums">{p.log_count}</td>
                   {paramDefs.map(d => {
                     const val = meta[d.name];
                     const save = v => saveMetadata(p.participant_code, d.name, v);

@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import LogsTab from './admin/LogsTab';
 import ParticipantsTab from './admin/ParticipantsTab';
 import ParametersTab from './admin/ParametersTab';
+import MethodologyTab from './admin/MethodologyTab';
 import { MST_COLORS } from '../constants/mst';
 
-const TABS = ['Logs', 'Participants', 'Parameters'];
+const TABS = ['Logs', 'Participants', 'Parameters', 'Methodology'];
 
 function StatCard({ label, value, sub }) {
   return (
@@ -27,8 +28,9 @@ function AnalyticsPanel() {
 
   if (!stats) return null;
 
-  const { overall, by_mst, snapshot } = stats;
+  const { overall, by_mst, by_device, by_participant, snapshot } = stats;
   const maxLoss = by_mst.length > 0 ? Math.max(...by_mst.map(s => s.avg_hourly_loss ?? 0)) : 1;
+  const maxDeviceLoss = by_device && by_device.length > 0 ? Math.max(...by_device.map(s => s.avg_hourly_loss ?? 0)) : 1;
 
   return (
     <div className="space-y-4 mb-6">
@@ -76,6 +78,69 @@ function AnalyticsPanel() {
           </div>
         </div>
       )}
+
+      {/* Row 4: Hourly loss by device model */}
+      {by_device && by_device.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">Avg Hourly Loss % by Device</h3>
+          <div className="space-y-2">
+            {by_device.map(s => (
+              <div key={s.device_model} className="flex items-center gap-3">
+                <span className="text-xs text-gray-600 w-32 truncate">{s.device_model ?? '—'}</span>
+                <div className="flex-1 bg-gray-100 rounded-full h-2.5">
+                  <div
+                    className="h-2.5 rounded-full bg-blue-400 transition-all"
+                    style={{ width: maxDeviceLoss > 0 ? `${((s.avg_hourly_loss ?? 0) / maxDeviceLoss) * 100}%` : '0%' }}
+                  />
+                </div>
+                <span className="text-xs font-medium text-gray-700 w-14 text-right">
+                  {s.avg_hourly_loss !== null ? `${s.avg_hourly_loss}%/hr` : '—'}
+                </span>
+                <span className="text-xs text-gray-400">({s.count} pairs)</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Row 5: Per-participant metrics table */}
+      {by_participant && by_participant.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">Per-Participant Metrics</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-gray-400 border-b border-gray-100">
+                  <th className="text-left py-1 pr-4 font-medium">Code</th>
+                  <th className="text-left py-1 pr-4 font-medium">Device</th>
+                  <th className="text-right py-1 pr-4 font-medium">Hourly</th>
+                  <th className="text-right py-1 pr-4 font-medium">Daily</th>
+                  <th className="text-right py-1 pr-4 font-medium">Nightly</th>
+                  <th className="text-right py-1 font-medium">Pairs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {by_participant.map(p => (
+                  <tr key={p.participant_code} className="border-t border-gray-50">
+                    <td className="py-1 pr-4 font-medium text-gray-700">{p.participant_code}</td>
+                    <td className="py-1 pr-4 text-gray-500">{p.device_model ?? '—'}</td>
+                    <td className="py-1 pr-4 text-right tabular-nums text-gray-700">
+                      {p.avg_hourly_loss !== null ? `${p.avg_hourly_loss}%/hr` : '—'}
+                    </td>
+                    <td className="py-1 pr-4 text-right tabular-nums text-gray-700">
+                      {p.avg_daily_loss !== null ? `${p.avg_daily_loss}%` : '—'}
+                    </td>
+                    <td className="py-1 pr-4 text-right tabular-nums text-gray-700">
+                      {p.nighttime_loss !== null ? `${p.nighttime_loss}%/hr` : '—'}
+                    </td>
+                    <td className="py-1 text-right tabular-nums text-gray-400">{p.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -111,6 +176,7 @@ export default function AdminDashboard() {
         {activeTab === 'Logs' && <LogsTab />}
         {activeTab === 'Participants' && <ParticipantsTab />}
         {activeTab === 'Parameters' && <ParametersTab />}
+        {activeTab === 'Methodology' && <MethodologyTab />}
       </main>
     </div>
   );
