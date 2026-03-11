@@ -9,7 +9,7 @@ router.post('/', async (req, res) => {
       participant_code,
       mst_group,
       battery_percentage,
-      shift_type,
+      shift_type = 'N/A',
       gps_enabled = false,
       notifications_enabled = false,
       always_on_display = false,
@@ -30,6 +30,26 @@ router.post('/', async (req, res) => {
               device_model = excluded.device_model`,
       args: [participant_code, mst_group, device_model]
     });
+
+    // Apply sensor parameter defaults for new participants
+    const existing = await db.execute({
+      sql: 'SELECT metadata FROM participants WHERE participant_code = ?',
+      args: [participant_code]
+    });
+    const currentMeta = JSON.parse(existing.rows[0]?.metadata || '{}');
+    const paramDefs = await db.execute(
+      "SELECT name, default_value FROM parameter_defs WHERE scope = 'participant' AND default_value IS NOT NULL"
+    );
+    const defaults = {};
+    for (const p of paramDefs.rows) {
+      if (!(p.name in currentMeta)) defaults[p.name] = p.default_value;
+    }
+    if (Object.keys(defaults).length > 0) {
+      await db.execute({
+        sql: 'UPDATE participants SET metadata = ? WHERE participant_code = ?',
+        args: [JSON.stringify({ ...currentMeta, ...defaults }), participant_code]
+      });
+    }
 
     const result = await db.execute({
       sql: `INSERT INTO logs (
@@ -65,7 +85,7 @@ router.post('/backlog', async (req, res) => {
       participant_code,
       mst_group,
       battery_percentage,
-      shift_type,
+      shift_type = 'N/A',
       gps_enabled = false,
       notifications_enabled = false,
       always_on_display = false,

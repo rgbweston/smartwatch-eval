@@ -9,6 +9,25 @@ const db = createClient({
   authToken: process.env.TURSO_AUTH_TOKEN
 });
 
+const SENSOR_PARAMS = [
+  { name: 'heart_rate',        label: 'Heart Rate',                    type: 'boolean', default_value: 'true',       options: null },
+  { name: 'respiration_rate',  label: 'Respiration Rate',              type: 'boolean', default_value: 'true',       options: null },
+  { name: 'stress',            label: 'Stress',                        type: 'boolean', default_value: 'true',       options: null },
+  { name: 'steps',             label: 'Steps',                         type: 'boolean', default_value: 'true',       options: null },
+  { name: 'bbi',               label: 'Beat-to-Beat Interval (BBI)',   type: 'boolean', default_value: 'true',       options: null },
+  { name: 'enhanced_bbi',      label: 'Enhanced BBI',                  type: 'boolean', default_value: 'true',       options: null },
+  { name: 'gyroscope',         label: 'Gyroscope',                     type: 'boolean', default_value: 'true',       options: null },
+  { name: 'spo2',              label: 'SpO2',                          type: 'select',  default_value: 'On Demand',  options: '["All day","Sleep Only","On Demand"]' },
+  { name: 'skin_temperature',  label: 'Skin Temperature',              type: 'boolean', default_value: 'true',       options: null },
+  { name: 'wrist_status',      label: 'Wrist Status',                  type: 'boolean', default_value: 'true',       options: null },
+  { name: 'accelerometer',     label: 'Accelerometer',                 type: 'boolean', default_value: 'true',       options: null },
+  { name: 'zero_crossing',     label: 'Zero Crossing',                 type: 'boolean', default_value: 'true',       options: null },
+  { name: 'actigraphy_1',      label: 'Actigraphy 1',                  type: 'boolean', default_value: 'true',       options: null },
+  { name: 'actigraphy_2',      label: 'Actigraphy 2',                  type: 'boolean', default_value: 'true',       options: null },
+  { name: 'actigraphy_3',      label: 'Actigraphy 3',                  type: 'boolean', default_value: 'true',       options: null },
+  { name: 'always_on_display', label: 'Always-on Display (AoD)',       type: 'boolean', default_value: 'false',      options: null },
+];
+
 async function initDb() {
   await db.batch([
     `CREATE TABLE IF NOT EXISTS participants (
@@ -40,6 +59,21 @@ async function initDb() {
       created_at TEXT NOT NULL
     )`
   ], 'write');
+
+  // Add new columns (safe to call repeatedly — ALTER TABLE is ignored if already present)
+  await db.execute("ALTER TABLE parameter_defs ADD COLUMN default_value TEXT DEFAULT NULL")
+    .catch(() => {});
+  await db.execute("ALTER TABLE parameter_defs ADD COLUMN options TEXT DEFAULT NULL")
+    .catch(() => {});
+
+  // Seed the 16 sensor parameters
+  for (const p of SENSOR_PARAMS) {
+    await db.execute({
+      sql: `INSERT OR IGNORE INTO parameter_defs (name, label, type, scope, default_value, options, created_at)
+            VALUES (?, ?, ?, 'participant', ?, ?, ?)`,
+      args: [p.name, p.label, p.type, p.default_value, p.options, new Date().toISOString()]
+    });
+  }
 }
 
 module.exports = { db, initDb };

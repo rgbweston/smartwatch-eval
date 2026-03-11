@@ -33,6 +33,32 @@ function InlineEdit({ value, onSave, type = 'text' }) {
   );
 }
 
+function BoolToggle({ value, onSave }) {
+  const isOn = value === 'true' || value === true;
+  return (
+    <button
+      onClick={() => onSave(isOn ? 'false' : 'true')}
+      className={`text-xs px-2 py-0.5 rounded-full font-medium transition-colors ${
+        isOn ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+      }`}
+    >
+      {isOn ? 'On' : 'Off'}
+    </button>
+  );
+}
+
+function SelectCell({ value, options, onSave }) {
+  return (
+    <select
+      value={value ?? ''}
+      onChange={e => onSave(e.target.value)}
+      className="border border-gray-200 rounded px-1 py-0.5 text-xs text-gray-700 focus:outline-none"
+    >
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+}
+
 export default function ParticipantsTab() {
   const [participants, setParticipants] = useState([]);
   const [paramDefs, setParamDefs] = useState([]);
@@ -89,15 +115,30 @@ export default function ParticipantsTab() {
                   </div>
                 </td>
                 <td className="px-4 py-2 text-gray-600">{p.device_model}</td>
-                {paramDefs.map(d => (
-                  <td key={d.id} className="px-4 py-2">
-                    <InlineEdit
-                      value={meta[d.name]}
-                      type={d.type}
-                      onSave={v => saveMetadata(p.participant_code, d.name, v)}
-                    />
-                  </td>
-                ))}
+                {paramDefs.map(d => {
+                  const val = meta[d.name];
+                  const save = v => saveMetadata(p.participant_code, d.name, v);
+                  if (d.type === 'boolean') {
+                    return (
+                      <td key={d.id} className="px-4 py-2">
+                        <BoolToggle value={val} onSave={save} />
+                      </td>
+                    );
+                  }
+                  if (d.type === 'select') {
+                    const options = JSON.parse(d.options || '[]');
+                    return (
+                      <td key={d.id} className="px-4 py-2">
+                        <SelectCell value={val} options={options} onSave={save} />
+                      </td>
+                    );
+                  }
+                  return (
+                    <td key={d.id} className="px-4 py-2">
+                      <InlineEdit value={val} type={d.type} onSave={save} />
+                    </td>
+                  );
+                })}
               </tr>
             );
           })}

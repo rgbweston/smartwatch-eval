@@ -16,24 +16,35 @@ router.get('/', async (req, res) => {
 // POST /api/parameters
 router.post('/', async (req, res) => {
   try {
-    const { name, label, type, scope } = req.body;
+    const { name, label, type, scope, default_value = null, options = null } = req.body;
 
     if (!name || !label || !type || !scope) {
       return res.status(400).json({ error: 'Missing required fields: name, label, type, scope' });
     }
-    if (!['text', 'number', 'boolean'].includes(type)) {
-      return res.status(400).json({ error: 'type must be text, number, or boolean' });
+    if (!['text', 'number', 'boolean', 'select'].includes(type)) {
+      return res.status(400).json({ error: 'type must be text, number, boolean, or select' });
     }
     if (!['participant', 'log'].includes(scope)) {
       return res.status(400).json({ error: 'scope must be participant or log' });
     }
+    if (type === 'select') {
+      if (!options) return res.status(400).json({ error: 'options is required for select type' });
+      try {
+        const parsed = JSON.parse(options);
+        if (!Array.isArray(parsed) || parsed.some(o => typeof o !== 'string')) {
+          return res.status(400).json({ error: 'options must be a JSON array of strings' });
+        }
+      } catch {
+        return res.status(400).json({ error: 'options must be a valid JSON array' });
+      }
+    }
 
     const result = await db.execute({
-      sql: `INSERT INTO parameter_defs (name, label, type, scope, created_at) VALUES (?, ?, ?, ?, ?)`,
-      args: [name, label, type, scope, new Date().toISOString()]
+      sql: `INSERT INTO parameter_defs (name, label, type, scope, default_value, options, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [name, label, type, scope, default_value, type === 'select' ? options : null, new Date().toISOString()]
     });
 
-    res.json({ id: Number(result.lastInsertRowid), name, label, type, scope });
+    res.json({ id: Number(result.lastInsertRowid), name, label, type, scope, default_value, options });
   } catch (err) {
     if (err.message?.includes('UNIQUE')) {
       return res.status(409).json({ error: 'Parameter name already exists' });

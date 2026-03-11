@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 
 export default function ParametersTab() {
   const [params, setParams] = useState([]);
-  const [form, setForm] = useState({ name: '', label: '', type: 'text', scope: 'log' });
+  const [form, setForm] = useState({ name: '', label: '', type: 'text', scope: 'log', default_value: '', options_raw: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -13,23 +13,42 @@ export default function ParametersTab() {
 
   useEffect(() => { fetchParams(); }, []);
 
+  function handleTypeChange(newType) {
+    setForm(f => ({ ...f, type: newType, default_value: '', options_raw: '' }));
+  }
+
   async function handleAdd(e) {
     e.preventDefault();
     if (!form.name.trim() || !form.label.trim()) return setError('Name and label are required.');
     if (!/^[a-z_][a-z0-9_]*$/.test(form.name)) return setError('Name must be lowercase letters, numbers, and underscores only.');
+
+    let options = null;
+    if (form.type === 'select') {
+      const parts = form.options_raw.split(',').map(s => s.trim()).filter(Boolean);
+      if (parts.length === 0) return setError('Options are required for select type.');
+      options = JSON.stringify(parts);
+    }
+
     setError('');
     setLoading(true);
     try {
       const res = await fetch('/api/parameters', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
+        body: JSON.stringify({
+          name: form.name,
+          label: form.label,
+          type: form.type,
+          scope: form.scope,
+          default_value: form.default_value || null,
+          options
+        })
       });
       if (!res.ok) {
         const data = await res.json();
         setError(data.error || 'Failed to create parameter');
       } else {
-        setForm({ name: '', label: '', type: 'text', scope: 'log' });
+        setForm({ name: '', label: '', type: 'text', scope: 'log', default_value: '', options_raw: '' });
         fetchParams();
       }
     } finally {
@@ -76,12 +95,13 @@ export default function ParametersTab() {
             <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
             <select
               value={form.type}
-              onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+              onChange={e => handleTypeChange(e.target.value)}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="text">Text</option>
               <option value="number">Number</option>
               <option value="boolean">Boolean</option>
+              <option value="select">Select</option>
             </select>
           </div>
           <div>
@@ -95,6 +115,50 @@ export default function ParametersTab() {
               <option value="participant">Per-participant</option>
             </select>
           </div>
+
+          {/* Options field for select type */}
+          {form.type === 'select' && (
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Options (comma-separated)</label>
+              <input
+                type="text"
+                value={form.options_raw}
+                onChange={e => setForm(f => ({ ...f, options_raw: e.target.value }))}
+                placeholder="e.g. All day, Sleep Only, On Demand"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
+
+          {/* Default value field */}
+          {(form.type === 'boolean' || form.type === 'select') && (
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Default Value</label>
+              {form.type === 'boolean' ? (
+                <select
+                  value={form.default_value}
+                  onChange={e => setForm(f => ({ ...f, default_value: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">— no default —</option>
+                  <option value="true">On (true)</option>
+                  <option value="false">Off (false)</option>
+                </select>
+              ) : (
+                <select
+                  value={form.default_value}
+                  onChange={e => setForm(f => ({ ...f, default_value: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">— no default —</option>
+                  {form.options_raw.split(',').map(s => s.trim()).filter(Boolean).map(o => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
           <div className="sm:col-span-2">
             {error && <p className="text-red-500 text-xs mb-2">{error}</p>}
             <button
@@ -123,6 +187,7 @@ export default function ParametersTab() {
                   <th className="px-4 py-2 text-left">Name</th>
                   <th className="px-4 py-2 text-left">Label</th>
                   <th className="px-4 py-2 text-left">Type</th>
+                  <th className="px-4 py-2 text-left">Default</th>
                   <th className="px-4 py-2"></th>
                 </tr>
               </thead>
@@ -132,6 +197,19 @@ export default function ParametersTab() {
                     <td className="px-4 py-2 font-mono text-xs text-gray-700">{p.name}</td>
                     <td className="px-4 py-2 text-gray-700">{p.label}</td>
                     <td className="px-4 py-2 text-gray-500">{p.type}</td>
+                    <td className="px-4 py-2 text-gray-500 text-xs">
+                      {p.default_value != null ? (
+                        p.type === 'boolean' ? (
+                          <span className={`px-2 py-0.5 rounded-full font-medium ${
+                            p.default_value === 'true'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-gray-100 text-gray-500'
+                          }`}>
+                            {p.default_value === 'true' ? 'On' : 'Off'}
+                          </span>
+                        ) : p.default_value
+                      ) : <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="px-4 py-2 text-right">
                       <button
                         onClick={() => handleDelete(p.id)}

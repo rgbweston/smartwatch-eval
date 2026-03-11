@@ -140,10 +140,6 @@ export default function LogsTab() {
               <th className="px-3 py-2 text-left">Code</th>
               <th className="px-3 py-2 text-left">MST</th>
               <th className="px-3 py-2 text-left">Battery</th>
-              <th className="px-3 py-2 text-left">Shift</th>
-              <th className="px-3 py-2 text-left">GPS</th>
-              <th className="px-3 py-2 text-left">Notif</th>
-              <th className="px-3 py-2 text-left">AOD</th>
               <th className="px-3 py-2 text-left">Device</th>
               <th className="px-3 py-2 text-left">Timestamp</th>
               <th className="px-3 py-2 text-left">Source</th>
@@ -154,7 +150,7 @@ export default function LogsTab() {
           </thead>
           <tbody>
             {logs.length === 0 ? (
-              <tr><td colSpan={11 + paramDefs.length} className="px-4 py-8 text-center text-gray-400">No logs yet.</td></tr>
+              <tr><td colSpan={7 + paramDefs.length} className="px-4 py-8 text-center text-gray-400">No logs yet.</td></tr>
             ) : logs.map(log => {
               const meta = JSON.parse(log.metadata || '{}');
               return (
@@ -163,10 +159,6 @@ export default function LogsTab() {
                   <td className="px-3 py-2 font-medium">{log.participant_code}</td>
                   <td className="px-3 py-2">{log.mst_group}</td>
                   <td className="px-3 py-2">{log.battery_percentage}%</td>
-                  <td className="px-3 py-2">{log.shift_type}</td>
-                  <td className="px-3 py-2">{log.gps_enabled ? 'Yes' : 'No'}</td>
-                  <td className="px-3 py-2">{log.notifications_enabled ? 'Yes' : 'No'}</td>
-                  <td className="px-3 py-2">{log.always_on_display ? 'Yes' : 'No'}</td>
                   <td className="px-3 py-2 text-xs text-gray-600">{log.device_model}</td>
                   <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">
                     {new Date(log.timestamp).toLocaleString()}
