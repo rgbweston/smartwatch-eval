@@ -17,7 +17,7 @@ router.post('/', async (req, res) => {
       metadata = {}
     } = req.body;
 
-    if (!participant_code || !mst_group || battery_percentage == null || !shift_type || !device_model) {
+    if (!participant_code || !mst_group || battery_percentage == null || !device_model) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -74,7 +74,7 @@ router.post('/backlog', async (req, res) => {
       metadata = {}
     } = req.body;
 
-    if (!participant_code || !mst_group || battery_percentage == null || !shift_type || !device_model || !timestamp) {
+    if (!participant_code || !mst_group || battery_percentage == null || !device_model || !timestamp) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 

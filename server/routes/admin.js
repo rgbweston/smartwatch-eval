@@ -58,4 +58,20 @@ router.patch('/participants/:code/metadata', async (req, res) => {
   }
 });
 
+// GET /api/device-models
+router.get('/device-models', async (req, res) => {
+  try {
+    const result = await db.execute(`
+      SELECT device_model, COUNT(*) as count
+      FROM participants
+      GROUP BY device_model
+      ORDER BY count DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 module.exports = router;

@@ -33,6 +33,13 @@ initDb()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
+
+      if (process.env.NODE_ENV === 'production' && process.env.RENDER_EXTERNAL_URL) {
+        setInterval(() => {
+          fetch(`${process.env.RENDER_EXTERNAL_URL}/api/health`)
+            .catch(err => console.error('Keep-alive ping failed:', err));
+        }, 10 * 60 * 1000);
+      }
     });
   })
   .catch(err => {

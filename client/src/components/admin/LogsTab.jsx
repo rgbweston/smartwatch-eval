@@ -38,8 +38,7 @@ export default function LogsTab() {
   const [filters, setFilters] = useState({ participant_code: '', mst_group: '', source: '' });
   const [showBacklog, setShowBacklog] = useState(false);
   const [backlog, setBacklog] = useState({
-    participant_code: '', mst_group: '', battery_percentage: '', shift_type: 'Day',
-    gps_enabled: false, notifications_enabled: false, always_on_display: false,
+    participant_code: '', mst_group: '', battery_percentage: '',
     device_model: '', timestamp: ''
   });
 
@@ -82,8 +81,7 @@ export default function LogsTab() {
     });
     setShowBacklog(false);
     setBacklog({
-      participant_code: '', mst_group: '', battery_percentage: '', shift_type: 'Day',
-      gps_enabled: false, notifications_enabled: false, always_on_display: false,
+      participant_code: '', mst_group: '', battery_percentage: '',
       device_model: '', timestamp: ''
     });
     fetchAll();
@@ -222,16 +220,6 @@ export default function LogsTab() {
                 </div>
               ))}
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Shift Type</label>
-                <select
-                  value={backlog.shift_type}
-                  onChange={e => setBacklog(b => ({ ...b, shift_type: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {['Day', 'Night', 'Long Day'].map(s => <option key={s}>{s}</option>)}
-                </select>
-              </div>
-              <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Timestamp</label>
                 <input
                   type="datetime-local"
@@ -240,23 +228,6 @@ export default function LogsTab() {
                   onChange={e => setBacklog(b => ({ ...b, timestamp: e.target.value }))}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </div>
-              <div className="space-y-2">
-                {[
-                  ['GPS', 'gps_enabled'],
-                  ['Notifications', 'notifications_enabled'],
-                  ['Always-on Display', 'always_on_display']
-                ].map(([label, key]) => (
-                  <label key={key} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={backlog[key]}
-                      onChange={e => setBacklog(b => ({ ...b, [key]: e.target.checked }))}
-                      className="rounded"
-                    />
-                    <span className="text-sm text-gray-700">{label}</span>
-                  </label>
-                ))}
               </div>
               <div className="flex gap-2 pt-2">
                 <button

@@ -1,18 +1,28 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MST_COLORS } from '../constants/mst';
 import ProfilePicker from './ProfilePicker';
 
-const SHIFT_TYPES = ['Day', 'Night', 'Long Day'];
+function formatTimeSince(isoTimestamp) {
+  const diffMs = Date.now() - new Date(isoTimestamp).getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return '< 1m ago';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const hours = Math.floor(diffMins / 60);
+  const mins = diffMins % 60;
+  return mins > 0 ? `${hours}h ${mins}m ago` : `${hours}h ago`;
+}
 
 export default function LogScreen({ profile, profiles, activeProfileIndex, onSwitchProfile, onAddNew }) {
   const [battery, setBattery] = useState('');
-  const [shiftType, setShiftType] = useState('Day');
-  const [gps, setGps] = useState(false);
-  const [notifications, setNotifications] = useState(false);
-  const [aod, setAod] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [flash, setFlash] = useState('');
   const [showPicker, setShowPicker] = useState(false);
+  const [lastLogTime, setLastLogTime] = useState(null);
+
+  useEffect(() => {
+    const times = JSON.parse(localStorage.getItem('last_log_times') || '{}');
+    setLastLogTime(times[profile.participantCode] || null);
+  }, [profile.participantCode]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -28,21 +38,21 @@ export default function LogScreen({ profile, profiles, activeProfileIndex, onSwi
           participant_code: profile.participantCode,
           mst_group: profile.mstGroup,
           battery_percentage: pct,
-          shift_type: shiftType,
-          gps_enabled: gps,
-          notifications_enabled: notifications,
-          always_on_display: aod,
           device_model: profile.deviceModel
         })
       });
       if (!res.ok) throw new Error('Failed to log');
       const now = new Date();
+      const isoNow = now.toISOString();
+
+      const times = JSON.parse(localStorage.getItem('last_log_times') || '{}');
+      times[profile.participantCode] = isoNow;
+      localStorage.setItem('last_log_times', JSON.stringify(times));
+      setLastLogTime(isoNow);
+
       const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       setFlash(`Logged: ${pct}% at ${time}`);
       setBattery('');
-      setGps(false);
-      setNotifications(false);
-      setAod(false);
       setTimeout(() => setFlash(''), 3000);
     } catch {
       setFlash('Error — please try again');
@@ -68,7 +78,7 @@ export default function LogScreen({ profile, profiles, activeProfileIndex, onSwi
 
       <div className="w-full max-w-sm">
         {/* Banner */}
-        <div className="flex items-center justify-between bg-white rounded-xl px-4 py-3 mb-4 shadow-sm">
+        <div className="flex items-center justify-between bg-white rounded-xl px-4 py-3 mb-1 shadow-sm">
           <div className="flex items-center gap-2 min-w-0">
             <span
               className="w-4 h-4 rounded-full flex-shrink-0 border border-gray-300"
@@ -85,6 +95,14 @@ export default function LogScreen({ profile, profiles, activeProfileIndex, onSwi
             Not you?
           </button>
         </div>
+
+        {lastLogTime ? (
+          <p className="text-xs text-gray-400 text-center mb-3">
+            Last logged {formatTimeSince(lastLogTime)}
+          </p>
+        ) : (
+          <div className="mb-4" />
+        )}
 
         {/* Log form */}
         <div className="bg-white rounded-2xl shadow-md p-6">
@@ -106,53 +124,6 @@ export default function LogScreen({ profile, profiles, activeProfileIndex, onSwi
                 inputMode="numeric"
                 required
               />
-            </div>
-
-            {/* Shift type */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Shift Type
-              </label>
-              <div className="flex gap-2">
-                {SHIFT_TYPES.map(s => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setShiftType(s)}
-                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      shiftType === s
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Toggles */}
-            <div className="space-y-3">
-              {[
-                { label: 'GPS', value: gps, setter: setGps },
-                { label: 'Notifications', value: notifications, setter: setNotifications },
-                { label: 'Always-on Display', value: aod, setter: setAod }
-              ].map(({ label, value, setter }) => (
-                <label key={label} className="flex items-center justify-between cursor-pointer">
-                  <span className="text-sm text-gray-700">{label}</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={value}
-                    onClick={() => setter(v => !v)}
-                    className={`w-11 h-6 rounded-full transition-colors relative ${value ? 'bg-blue-600' : 'bg-gray-300'}`}
-                  >
-                    <span
-                      className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${value ? 'translate-x-6' : 'translate-x-1'}`}
-                    />
-                  </button>
-                </label>
-              ))}
             </div>
 
             {/* Submit */}
