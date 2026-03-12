@@ -18,11 +18,48 @@ export default function LogScreen({ profile, profiles, activeProfileIndex, onSwi
   const [flash, setFlash] = useState('');
   const [showPicker, setShowPicker] = useState(false);
   const [lastLogTime, setLastLogTime] = useState(null);
+  const [spo2, setSpo2] = useState(null);
+  const [showSpo2Popup, setShowSpo2Popup] = useState(false);
+  const [spo2Selected, setSpo2Selected] = useState('On Demand');
+  const [showHowToFind, setShowHowToFind] = useState(false);
 
   useEffect(() => {
     const times = JSON.parse(localStorage.getItem('last_log_times') || '{}');
     setLastLogTime(times[profile.participantCode] || null);
   }, [profile.participantCode]);
+
+  useEffect(() => {
+    async function loadSpo2() {
+      try {
+        const res = await fetch(`/api/logs?participant_code=${profile.participantCode}`);
+        if (!res.ok) throw new Error();
+        const logs = await res.json();
+        if (logs.length > 0) {
+          const meta = JSON.parse(logs[0].metadata || '{}');
+          setSpo2(meta.spo2 || 'On Demand');
+        } else {
+          setSpo2('On Demand');
+        }
+      } catch {
+        setSpo2('On Demand');
+      }
+    }
+    loadSpo2();
+  }, [profile.participantCode]);
+
+  async function handleSpo2Save() {
+    try {
+      await fetch(`/api/participants/${profile.participantCode}/sensor-config-field`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'spo2', value: spo2Selected })
+      });
+      setSpo2(spo2Selected);
+      setShowSpo2Popup(false);
+    } catch {
+      // silently ignore — non-critical
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -106,7 +143,66 @@ export default function LogScreen({ profile, profiles, activeProfileIndex, onSwi
 
         {/* Log form */}
         <div className="bg-white rounded-2xl shadow-md p-6">
-          <h1 className="text-lg font-bold text-gray-800 mb-5">Log Battery</h1>
+          <h1 className="text-lg font-bold text-gray-800 mb-2">Log Battery</h1>
+
+          {spo2 !== null && (
+            <div className="mb-4">
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-gray-400">SpO2: {spo2}</span>
+                <button
+                  type="button"
+                  onClick={() => { setSpo2Selected(spo2); setShowSpo2Popup(true); setShowHowToFind(false); }}
+                  className="text-xs text-blue-500 underline"
+                >
+                  change
+                </button>
+              </div>
+              {showSpo2Popup && (
+                <div className="mt-2 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <select
+                    value={spo2Selected}
+                    onChange={e => setSpo2Selected(e.target.value)}
+                    className="w-full border border-gray-300 rounded px-2 py-1 text-sm mb-2"
+                  >
+                    <option>All day</option>
+                    <option>Sleep Only</option>
+                    <option>On Demand</option>
+                  </select>
+                  <div className="mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowHowToFind(v => !v)}
+                      className="text-xs text-gray-400 underline"
+                    >
+                      {showHowToFind ? 'Hide' : 'How to find this'}
+                    </button>
+                    {showHowToFind && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Navigate to <strong>Settings → Watch Sensors / Health &amp; Wellness → Pulse Oximeter</strong> to check your current setting.
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSpo2Save}
+                      className="text-xs bg-blue-600 text-white rounded px-3 py-1"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowSpo2Popup(false)}
+                      className="text-xs text-gray-500 rounded px-3 py-1"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-5">
             {/* Battery % */}
             <div>

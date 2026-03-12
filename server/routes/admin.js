@@ -43,8 +43,15 @@ router.get('/stats', async (req, res) => {
       byParticipant[log.participant_code].push(log);
     }
 
-    const allRates = [];    // { lossPerHour, mst_group, isDaytime, device_model, participant_code }
+    const avg = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
+    const round1 = v => v !== null ? Math.round(v * 10) / 10 : null;
+
+    // Per-participant averaging: compute each participant's own averages first,
+    // then combine those averages equally (prevents frequent loggers from dominating).
+    const participantStats = [];
     for (const [participantCode, pLogs] of Object.entries(byParticipant)) {
+      const rates = [], daytimeRatesP = [], nightRatesP = [];
+      let mst_group = null, device_model = null;
       for (let i = 0; i < pLogs.length - 1; i++) {
         const a = pLogs[i], b = pLogs[i + 1];
         const hours = (new Date(b.timestamp) - new Date(a.timestamp)) / 3600000;
@@ -52,56 +59,57 @@ router.get('/stats', async (req, res) => {
         const loss = a.battery_percentage - b.battery_percentage;
         if (loss < 0) continue;                           // skip charges
         const hour = new Date(a.timestamp).getUTCHours();
-        allRates.push({
-          lossPerHour: loss / hours,
-          mst_group: a.mst_group,
-          isDaytime: hour >= 6 && hour < 22,
-          device_model: a.device_model,
-          participant_code: participantCode
-        });
+        const lossPerHour = loss / hours;
+        rates.push(lossPerHour);
+        if (hour >= 6 && hour < 22) daytimeRatesP.push(lossPerHour);
+        else nightRatesP.push(lossPerHour);
+        mst_group = a.mst_group;
+        device_model = a.device_model;
       }
+      if (rates.length === 0) continue;
+      participantStats.push({
+        participant_code: participantCode,
+        avg: avg(rates),
+        avgDaytime: avg(daytimeRatesP),
+        avgNight: avg(nightRatesP),
+        mst_group,
+        device_model,
+        count: rates.length
+      });
     }
 
-    const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
-    const round1 = v => v !== null ? Math.round(v * 10) / 10 : null;
+    // Overall = average of per-participant averages (equal weight per person)
+    const avgHourly = avg(participantStats.map(p => p.avg));
+    const daytimeRates = participantStats.map(p => p.avgDaytime).filter(v => v !== null);
+    const nightRates   = participantStats.map(p => p.avgNight).filter(v => v !== null);
 
-    const avgHourly = avg(allRates.map(r => r.lossPerHour));
-    const daytimeRates = allRates.filter(r => r.isDaytime).map(r => r.lossPerHour);
-    const nightRates   = allRates.filter(r => !r.isDaytime).map(r => r.lossPerHour);
-
-    // By MST group
+    // By MST group: average the per-participant avgs within each group
     const mstMap = {};
-    for (const r of allRates) {
-      if (!mstMap[r.mst_group]) mstMap[r.mst_group] = [];
-      mstMap[r.mst_group].push(r.lossPerHour);
+    for (const p of participantStats) {
+      if (!mstMap[p.mst_group]) mstMap[p.mst_group] = [];
+      mstMap[p.mst_group].push(p.avg);
     }
     const byMst = Object.entries(mstMap)
-      .map(([g, rates]) => ({ mst_group: Number(g), avg_hourly_loss: round1(avg(rates)), count: rates.length }))
+      .map(([g, avgs]) => ({ mst_group: Number(g), avg_hourly_loss: round1(avg(avgs)), count: avgs.length }))
       .sort((a, b) => a.mst_group - b.mst_group);
 
     const deviceMap = {};
-    for (const r of allRates) {
-      if (!deviceMap[r.device_model]) deviceMap[r.device_model] = [];
-      deviceMap[r.device_model].push(r.lossPerHour);
+    for (const p of participantStats) {
+      if (!deviceMap[p.device_model]) deviceMap[p.device_model] = [];
+      deviceMap[p.device_model].push(p.avg);
     }
     const by_device = Object.entries(deviceMap)
-      .map(([model, rates]) => ({ device_model: model, avg_hourly_loss: round1(avg(rates)), count: rates.length }))
+      .map(([model, avgs]) => ({ device_model: model, avg_hourly_loss: round1(avg(avgs)), count: avgs.length }))
       .sort((a, b) => (b.avg_hourly_loss ?? 0) - (a.avg_hourly_loss ?? 0));
 
-    const participantMap = {};
-    for (const r of allRates) {
-      if (!participantMap[r.participant_code]) participantMap[r.participant_code] = { all: [], night: [], device_model: r.device_model };
-      participantMap[r.participant_code].all.push(r.lossPerHour);
-      if (!r.isDaytime) participantMap[r.participant_code].night.push(r.lossPerHour);
-    }
-    const by_participant = Object.entries(participantMap)
-      .map(([code, d]) => ({
-        participant_code: code,
-        device_model: d.device_model,
-        avg_hourly_loss: round1(avg(d.all)),
-        avg_daily_loss: round1(avg(d.all) !== null ? avg(d.all) * 24 : null),
-        nighttime_loss: round1(avg(d.night)),
-        count: d.all.length
+    const by_participant = participantStats
+      .map(p => ({
+        participant_code: p.participant_code,
+        device_model: p.device_model,
+        avg_hourly_loss: round1(p.avg),
+        avg_daily_loss: round1(p.avg !== null ? p.avg * 24 : null),
+        nighttime_loss: round1(p.avgNight),
+        count: p.count
       }))
       .sort((a, b) => a.participant_code.localeCompare(b.participant_code));
 
@@ -354,6 +362,34 @@ router.patch('/sampling-configs/:id', async (req, res) => {
         });
       }
     }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PATCH /api/participants/:code/sensor-config-field
+router.patch('/participants/:code/sensor-config-field', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { name, value } = req.body;
+    if (!name || value == null) return res.status(400).json({ error: 'name and value are required' });
+
+    const result = await db.execute({
+      sql: 'SELECT metadata FROM participants WHERE participant_code = ?',
+      args: [code]
+    });
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Participant not found' });
+
+    const existing = JSON.parse(result.rows[0].metadata || '{}');
+    if (!existing._sensor_config) existing._sensor_config = {};
+    existing._sensor_config[name] = value;
+
+    await db.execute({
+      sql: 'UPDATE participants SET metadata = ? WHERE participant_code = ?',
+      args: [JSON.stringify(existing), code]
+    });
     res.json({ ok: true });
   } catch (err) {
     console.error(err);

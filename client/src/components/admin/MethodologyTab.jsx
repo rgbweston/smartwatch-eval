@@ -87,7 +87,24 @@ export default function MethodologyTab() {
           </Rule>
           <Rule>
             <strong>By MST group / By device</strong>: rates grouped by the participant's MST group or device model,
-            then averaged across all valid pairs in that group.
+            then averaged across per-participant averages in that group.
+          </Rule>
+        </ul>
+      </Section>
+
+      <Section title="5. Aggregation Method">
+        <p className="text-sm text-gray-600 mb-2">
+          Overall and group averages use <strong>per-participant weighting</strong>: each participant's valid pairs
+          are averaged into a single value for that person, and then those participant averages are combined equally.
+        </p>
+        <ul className="list-disc list-inside space-y-1">
+          <Rule>
+            A participant who logs every 30 minutes contributes the same weight to the overall average as one
+            who logs twice a day — frequent logging does not inflate their influence on group metrics.
+          </Rule>
+          <Rule>
+            This applies to overall, by-MST-group, and by-device breakdowns. The per-participant table
+            is inherently individual and is unaffected.
           </Rule>
         </ul>
       </Section>
