@@ -22,11 +22,29 @@ export default function LogScreen({ profile, profiles, activeProfileIndex, onSwi
   const [showSpo2Popup, setShowSpo2Popup] = useState(false);
   const [spo2Selected, setSpo2Selected] = useState('On Demand');
   const [showHowToFind, setShowHowToFind] = useState(false);
+  const [announcements, setAnnouncements] = useState([]);
 
   useEffect(() => {
     const times = JSON.parse(localStorage.getItem('last_log_times') || '{}');
     setLastLogTime(times[profile.participantCode] || null);
   }, [profile.participantCode]);
+
+  useEffect(() => {
+    async function loadAnnouncements() {
+      try {
+        const res = await fetch(
+          `/api/announcements?participant_code=${profile.participantCode}&mst_group=${profile.mstGroup}`
+        );
+        if (!res.ok) return;
+        const all = await res.json();
+        const dismissed = JSON.parse(localStorage.getItem('dismissed_announcements') || '[]');
+        setAnnouncements(all.filter(a => !dismissed.includes(a.id)));
+      } catch {
+        // non-critical
+      }
+    }
+    loadAnnouncements();
+  }, [profile.participantCode, profile.mstGroup]);
 
   useEffect(() => {
     async function loadSpo2() {
@@ -139,6 +157,24 @@ export default function LogScreen({ profile, profiles, activeProfileIndex, onSwi
           </p>
         ) : (
           <div className="mb-4" />
+        )}
+
+        {/* Announcements */}
+        {announcements.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm px-4 py-3 mb-3 flex items-start justify-between gap-3">
+            <p className="text-sm text-gray-700">{announcements[0].message}</p>
+            <button
+              onClick={() => {
+                const dismissed = JSON.parse(localStorage.getItem('dismissed_announcements') || '[]');
+                dismissed.push(announcements[0].id);
+                localStorage.setItem('dismissed_announcements', JSON.stringify(dismissed));
+                setAnnouncements(prev => prev.slice(1));
+              }}
+              className="text-xs text-blue-600 underline flex-shrink-0"
+            >
+              Got it
+            </button>
+          </div>
         )}
 
         {/* Log form */}

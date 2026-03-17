@@ -36,6 +36,13 @@ async function initDb() {
       device_model      TEXT NOT NULL,
       metadata          TEXT DEFAULT '{}'
     )`,
+    `CREATE TABLE IF NOT EXISTS announcements (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      message      TEXT NOT NULL,
+      target_type  TEXT NOT NULL DEFAULT 'all',
+      target_value TEXT,
+      created_at   TEXT NOT NULL
+    )`,
     `CREATE TABLE IF NOT EXISTS logs (
       id                    INTEGER PRIMARY KEY AUTOINCREMENT,
       participant_code      TEXT NOT NULL,

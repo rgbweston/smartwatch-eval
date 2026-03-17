@@ -4,9 +4,10 @@ import ParticipantsTab from './admin/ParticipantsTab';
 import ParametersTab from './admin/ParametersTab';
 import MethodologyTab from './admin/MethodologyTab';
 import ConfigsTab from './admin/ConfigsTab';
+import MessagesTab from './admin/MessagesTab';
 import { MST_COLORS } from '../constants/mst';
 
-const TABS = ['Logs', 'Participants', 'Parameters', 'Methodology', 'Configs'];
+const TABS = ['Logs', 'Participants', 'Parameters', 'Methodology', 'Configs', 'Messages'];
 
 function StatCard({ label, value, sub }) {
   return (
@@ -209,6 +210,7 @@ export default function AdminDashboard() {
         {activeTab === 'Parameters' && <ParametersTab />}
         {activeTab === 'Methodology' && <MethodologyTab />}
         {activeTab === 'Configs' && <ConfigsTab />}
+        {activeTab === 'Messages' && <MessagesTab />}
       </main>
     </div>
   );

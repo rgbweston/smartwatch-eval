@@ -414,4 +414,60 @@ router.delete('/sampling-configs/:id', async (req, res) => {
   }
 });
 
+// GET /api/announcements
+router.get('/announcements', async (req, res) => {
+  try {
+    const { participant_code, mst_group } = req.query;
+    const result = await db.execute({
+      sql: `SELECT * FROM announcements
+            WHERE target_type = 'all'
+               OR (target_type = 'mst_group' AND target_value = ?)
+               OR (target_type = 'participant' AND target_value = ?)
+            ORDER BY created_at ASC`,
+      args: [mst_group ?? null, participant_code ?? null]
+    });
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/announcements
+router.post('/announcements', async (req, res) => {
+  try {
+    const { message, target_type, target_value } = req.body;
+    if (!message) return res.status(400).json({ error: 'message is required' });
+    if (!['all', 'mst_group', 'participant'].includes(target_type)) {
+      return res.status(400).json({ error: 'target_type must be all, mst_group, or participant' });
+    }
+    if (target_type !== 'all' && !target_value) {
+      return res.status(400).json({ error: 'target_value is required for mst_group and participant targets' });
+    }
+    const inserted = await db.execute({
+      sql: `INSERT INTO announcements (message, target_type, target_value, created_at) VALUES (?, ?, ?, ?)`,
+      args: [message, target_type, target_value ?? null, new Date().toISOString()]
+    });
+    res.json({ id: Number(inserted.lastInsertRowid) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/announcements/:id
+router.delete('/announcements/:id', async (req, res) => {
+  try {
+    const result = await db.execute({
+      sql: 'DELETE FROM announcements WHERE id = ?',
+      args: [req.params.id]
+    });
+    if (result.rowsAffected === 0) return res.status(404).json({ error: 'Announcement not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 module.exports = router;
