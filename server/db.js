@@ -110,22 +110,32 @@ async function initDb() {
     PRIMARY KEY (config_id, param_name)
   )`);
 
-  // Seed initial config if none exists
+  // Seed initial configs if none exist
   const configCount = await db.execute('SELECT COUNT(*) as count FROM sampling_configs');
   if (Number(configCount.rows[0].count) === 0) {
     const earliestLog = await db.execute('SELECT MIN(timestamp) as min_ts FROM logs');
-    const startDate = earliestLog.rows[0].min_ts || new Date().toISOString();
-    const inserted = await db.execute({
-      sql: `INSERT INTO sampling_configs (name, start_date, end_date) VALUES ('Config 1', ?, NULL)`,
-      args: [startDate]
-    });
-    const configId = Number(inserted.lastInsertRowid);
+    const studyStart = earliestLog.rows[0].min_ts || new Date().toISOString();
+
+    const INITIAL_CONFIGS = [
+      { name: 'Pre SpO2',      start_date: studyStart,               end_date: '2026-03-17T12:00:00.000Z' },
+      { name: 'SpO2 All-Day',  start_date: '2026-03-17T12:00:00.000Z', end_date: '2026-03-18T17:30:00.000Z' },
+      { name: 'SDK All Off',   start_date: '2026-03-18T17:30:00.000Z', end_date: '2026-03-19T12:15:00.000Z' },
+      { name: 'SDK All On',    start_date: '2026-03-19T12:15:00.000Z', end_date: null },
+    ];
+
     const logParams = await db.execute("SELECT name FROM parameter_defs WHERE scope='log'");
-    for (const p of logParams.rows) {
-      await db.execute({
-        sql: `INSERT OR IGNORE INTO sampling_config_values (config_id, param_name, value) VALUES (?, ?, 'Unknown')`,
-        args: [configId, p.name]
+    for (const cfg of INITIAL_CONFIGS) {
+      const inserted = await db.execute({
+        sql: `INSERT INTO sampling_configs (name, start_date, end_date) VALUES (?, ?, ?)`,
+        args: [cfg.name, cfg.start_date, cfg.end_date]
       });
+      const configId = Number(inserted.lastInsertRowid);
+      for (const p of logParams.rows) {
+        await db.execute({
+          sql: `INSERT OR IGNORE INTO sampling_config_values (config_id, param_name, value) VALUES (?, ?, 'Unknown')`,
+          args: [configId, p.name]
+        });
+      }
     }
   }
 
