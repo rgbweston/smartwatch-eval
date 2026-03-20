@@ -79,7 +79,7 @@ export default function ConfigsTab() {
     await fetch('/api/sampling-configs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newConfig)
+      body: JSON.stringify({ ...newConfig, start_date: new Date(newConfig.start_date).toISOString() })
     });
     setShowAdd(false);
     setNewConfig({ name: '', start_date: '' });
@@ -125,7 +125,7 @@ export default function ConfigsTab() {
                 type="datetime-local"
                 required
                 value={newConfig.start_date}
-                onChange={e => setNewConfig(n => ({ ...n, start_date: new Date(e.target.value).toISOString() }))}
+                onChange={e => setNewConfig(n => ({ ...n, start_date: e.target.value }))}
                 className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
